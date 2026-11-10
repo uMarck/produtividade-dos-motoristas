@@ -1,0 +1,10 @@
+@media (max-width: 740px) {
+  .metric-number {
+    display: grid;
+    justify-items: start;
+    align-items: start;
+    flex-direction: initial;
+    gap: 2px;
+  }
+  .metric-copy { padding-right: 20px; }
+}
