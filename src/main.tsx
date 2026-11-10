@@ -335,8 +335,8 @@ function App() {
       <div className="dashboard-wrap">
         <header className="masthead">
           <div className="brand-lockup">
-            <img className="brand-logo" src="/brand.svg" alt="Alencar Log" />
-            <div className="brand-name"><span className="brand-overline">GRUPO</span><strong>ALENCAR</strong><em>LOG</em></div>
+            <img className="brand-logo" src="/alencar-logo.png" alt="Grupo Alencar Log" />
+            
             <span className="brand-divider" />
             <div className="truck-emblem"><Truck size={31} strokeWidth={2.2} /></div>
           </div>
@@ -372,9 +372,9 @@ function App() {
         {loadError && <div className="error-banner"><span>{loadError}</span><button onClick={() => void loadRecords()}><span>RECARREGAR</span></button></div>}
 
         <section className="metric-grid" aria-label="Totais da demanda do dia">
-          <MetricCard icon={Truck} title="PERNA INTEIRA" total={totals.whole} share={percentage(totals.whole, totalLegs)} tone="lime" description="movimentos · demanda do dia" />
-          <MetricCard icon={Truck} title="MEIA PERNA" total={totals.half} share={percentage(totals.half, totalLegs)} tone="cyan" description="movimentos · demanda do dia" />
-          <MetricCard icon={BarChart3} title="TOTAL GERAL" total={totalLegs} share={percentage(totalLegs, totalLegs)} tone="white" description="pernas movimentadas no dia" />
+          <MetricCard icon={Truck} title="PERNA INTEIRA" total={totals.whole} share={percentage(totals.whole, totalLegs)} tone="lime" description="movimentos · período selecionado" />
+          <MetricCard icon={Truck} title="MEIA PERNA" total={totals.half} share={percentage(totals.half, totalLegs)} tone="cyan" description="movimentos · período selecionado" />
+          <MetricCard icon={BarChart3} title="TOTAL GERAL" total={totalLegs} share={percentage(totalLegs, totalLegs)} tone="white" description="pernas movimentadas no período" />
         </section>
 
         <section className="dashboard-grid" aria-label="Painel de produtividade">
@@ -388,7 +388,7 @@ function App() {
                 <DonutChart whole={totals.whole} half={totals.half} total={totalLegs} />
               </Panel>
               <Panel title="TOP 10 MOTORISTAS" icon={Trophy} className="ranking-panel">
-                {loading ? <ChartLoading /> : sortedRecords.length ? <Ranking records={sortedRecords.slice(0, 10)} /> : <EmptyChart text="Seu ranking diário começa com os registros de hoje." />}
+                {loading ? <ChartLoading /> : sortedRecords.length ? <Ranking records={sortedRecords.slice(0, 10)} /> : <EmptyChart text="O ranking aparece após os primeiros lançamentos do {view === 'day' ? 'dia' : 'mês'}." />}
               </Panel>
             </div>
           </div>
@@ -396,23 +396,23 @@ function App() {
           <section className="panel roster-panel">
             <div className="panel-heading roster-heading">
               <div className="panel-title"><span className="panel-icon"><Truck size={19} /></span><h2>PRODUTIVIDADE DE MOTORISTAS</h2></div>
-              <span className="roster-count">{number(records.length)} {records.length === 1 ? 'MOTORISTA' : 'MOTORISTAS'}</span>
+              <span className="roster-count">{number(displayRecords.length)} {displayRecords.length === 1 ? 'MOTORISTA' : 'MOTORISTAS'}</span>
             </div>
             <div className="table-tools"><label className="search-box"><Search size={16} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar motorista" aria-label="Buscar motorista" /></label><button className="add-mini" onClick={startNew} hidden={view === 'month'}><Plus size={16} /><span>ADICIONAR</span></button></div>
             <div className="table-scroll">
-              <table>
-                <thead><tr><th>#</th><th>MOTORISTA</th><th>PERNA<br />INTEIRA</th><th>MEIA<br />PERNA</th><th>TOTAL</th><th>ENTRADA<br />NA BASE</th><th>SAÍDA<br />DA BASE</th><th>ENCERRAMENTO<br />DA OPERAÇÃO</th><th>MÉDIA DE<br />CONTAINER/HORA</th><th>TEMPO DE<br />OPERAÇÃO</th><th className="actions-col"><span className="sr-only">Ações</span></th></tr></thead>
+              <table className={view === 'month' ? 'monthly-table' : ''}>
+                <thead><tr><th>#</th><th>MOTORISTA</th><th>PERNA<br />INTEIRA</th><th>MEIA<br />PERNA</th><th>TOTAL</th>{view === 'month' ? <><th>DIAS<br />TRABALHADOS</th><th>HORAS<br />TOTAIS</th><th>CONTAINERS<br />POR HORA</th></> : <><th>ENTRADA<br />NA BASE</th><th>SAÍDA<br />DA BASE</th><th>ENCERRAMENTO<br />DA OPERAÇÃO</th><th>MÉDIA DE<br />CONTAINER/HORA</th><th>TEMPO DE<br />OPERAÇÃO</th><th className="actions-col"><span className="sr-only">Ações</span></th></>}</tr></thead>
                 <tbody>
-                  {loading ? <tr><td colSpan={11} className="table-empty"><LoaderCircle className="spin" size={21} /> Carregando lançamentos…</td></tr> : tableRecords.length ? tableRecords.map((record) => {
+                  {loading ? <tr><td colSpan={view === 'month' ? 8 : 11} className="table-empty"><LoaderCircle className="spin" size={21} /> Carregando lançamentos…</td></tr> : tableRecords.length ? tableRecords.map((record) => {
                     const rank = sortedRecords.findIndex((item) => item.id === record.id) + 1;
                     return <tr key={record.id}>
                       <td><span className={`rank-number ${rank <= 3 ? 'rank-highlight' : ''}`}>{rank}</span></td>
                       <td className="driver-cell">{record.driver_name}</td>
                       <td>{number(record.whole_legs)}</td><td>{number(record.half_legs)}</td><td className="total-cell">{number(legs(record))}</td>
-                      <td>{record.base_arrival || '—'}</td><td>{record.base_departure}</td><td>{record.activity_end}</td><td className="avg-cell">{number(view === 'month' ? (Number(record.operation_time.split(':')[0]) * 60 + Number(record.operation_time.split(':')[1]) ? legs(record) / ((Number(record.operation_time.split(':')[0]) * 60 + Number(record.operation_time.split(':')[1])) / 60) : 0) : hourlyAverage(record), 1)}</td><td>{view === 'month' ? record.operation_time : operationDuration(record.base_departure, record.activity_end)}</td>
-                      <td className="row-actions">{view === 'day' && <><button aria-label={`Editar ${record.driver_name}`} title="Editar" onClick={() => startEdit(record)}><Pencil size={14} /></button><button aria-label={`Excluir ${record.driver_name}`} title="Excluir" onClick={() => void removeRecord(record)}><Trash2 size={14} /></button></>}</td>
+                      {view === 'month' ? <><td>{record.base_arrival}</td><td>{record.operation_time}</td><td className="avg-cell">{number((() => { const [hours, minutes] = record.operation_time.split(':').map(Number); return hours * 60 + minutes ? legs(record) / ((hours * 60 + minutes) / 60) : 0; })(), 1)}</td></> : <><td>{record.base_arrival || '—'}</td><td>{record.base_departure}</td><td>{record.activity_end}</td><td className="avg-cell">{number(hourlyAverage(record), 1)}</td><td>{operationDuration(record.base_departure, record.activity_end)}</td><td className="row-actions"><button aria-label={`Editar ${record.driver_name}`} title="Editar" onClick={() => startEdit(record)}><Pencil size={14} /></button><button aria-label={`Excluir ${record.driver_name}`} title="Excluir" onClick={() => void removeRecord(record)}><Trash2 size={14} /></button></td></>}
+
                     </tr>;
-                  }) : <tr><td colSpan={11} className="table-empty">{searchTerm ? 'Nenhum motorista encontrado.' : 'Nenhum lançamento nesta data. Clique em “Novo registro” para começar.'}</td></tr>}
+                  }) : <tr><td colSpan={view === 'month' ? 8 : 11} className="table-empty">{searchTerm ? 'Nenhum motorista encontrado.' : view === 'month' ? 'Nenhum lançamento neste mês. Selecione um dia para adicionar registros.' : 'Nenhum lançamento nesta data. Clique em “Novo registro” para começar.'}</td></tr>}
                 </tbody>
               </table>
             </div>
