@@ -388,7 +388,7 @@ function App() {
                 <DonutChart whole={totals.whole} half={totals.half} total={totalLegs} />
               </Panel>
               <Panel title="TOP 10 MOTORISTAS" icon={Trophy} className="ranking-panel">
-                {loading ? <ChartLoading /> : sortedRecords.length ? <Ranking records={sortedRecords.slice(0, 10)} /> : <EmptyChart text="O ranking aparece após os primeiros lançamentos do {view === 'day' ? 'dia' : 'mês'}." />}
+                {loading ? <ChartLoading /> : sortedRecords.length ? <Ranking records={sortedRecords.slice(0, 10)} /> : <EmptyChart text={`O ranking aparece após os primeiros lançamentos do ${view === 'day' ? 'dia' : 'mês'}.`} />}
               </Panel>
             </div>
           </div>
