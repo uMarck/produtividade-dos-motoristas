@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createClient, type Session } from '@supabase/supabase-js';
 import {
   BarChart3,
   CalendarDays,
@@ -8,6 +9,7 @@ import {
   FileSpreadsheet,
   FileText,
   LoaderCircle,
+  LogOut,
   Pencil,
   Plus,
   Search,
@@ -19,6 +21,12 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import './styles.css';
 import './mobile-tweaks.css';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+);
+const permittedEmails = new Set(['admin@alencarlog.com.br', 'admin1@alencarlog.com.br']);
 
 type DriverRecord = {
   id: number | string;
@@ -109,6 +117,12 @@ async function responseError(response: Response) {
 }
 
 function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
   const [selectedDate, setSelectedDate] = useState(localDateValue());
   const [view, setView] = useState<'day' | 'month'>('day');
   const [records, setRecords] = useState<DriverRecord[]>([]);
@@ -124,13 +138,52 @@ function App() {
   const exportRef = useRef<HTMLElement | null>(null);
   const requestSequence = useRef(0);
 
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next && permittedEmails.has(next.user.email?.toLowerCase() || '') ? next : null);
+      setCheckingAuth(false);
+    });
+    void supabase.auth.getUser().then(({ data, error }) => {
+      if (error || (data.user && !permittedEmails.has(data.user.email?.toLowerCase() || ''))) void supabase.auth.signOut();
+      setCheckingAuth(false);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function apiFetch(url: string, options: RequestInit = {}) {
+    const { data: { session: current } } = await supabase.auth.getSession();
+    if (!current) throw new Error('Sessão encerrada. Entre novamente.');
+    return fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${current.access_token}` } });
+  }
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoginError('');
+    if (!permittedEmails.has(loginEmail.trim().toLowerCase())) {
+      setLoginError('Esta conta não tem acesso à produtividade.');
+      return;
+    }
+    setLoggingIn(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPassword });
+    if (error) setLoginError('Não foi possível entrar. Confira o e-mail e a senha usados no STATUS OPERACIONAL.');
+    else setLoginPassword('');
+    setLoggingIn(false);
+  }
+
+  async function logout() {
+    requestSequence.current += 1;
+    setRecords([]);
+    setLoading(true);
+    await supabase.auth.signOut();
+  }
+
   async function loadRecords(date = selectedDate) {
     const sequence = ++requestSequence.current;
     setLoading(true);
     setLoadError('');
     try {
       const period = view === 'month' ? `month=${encodeURIComponent(date.slice(0, 7))}` : `date=${encodeURIComponent(date)}`;
-      const response = await fetch(`/api/productivity?${period}`);
+      const response = await apiFetch(`/api/productivity?${period}`);
       if (!response.ok) throw new Error(await responseError(response));
       const result = await response.json();
       if (sequence !== requestSequence.current) return;
@@ -145,10 +198,19 @@ function App() {
   }
 
   useEffect(() => {
+    if (!session) return;
     void loadRecords(selectedDate);
     // Intentionally run only when the selected report date changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, view]);
+  }, [selectedDate, view, session?.user.id]);
+
+  useEffect(() => {
+    if (!session) return;
+    const refresh = () => { if (document.visibilityState === 'visible' && !formOpen) void loadRecords(selectedDate); };
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener('focus', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [selectedDate, view, session?.user.id, formOpen]);
 
   useEffect(() => {
     if (!toast) return;
@@ -228,7 +290,7 @@ function App() {
     setSaving(true);
     try {
       const url = editingId === null ? '/api/productivity' : `/api/productivity/${editingId}?date=${selectedDate}`;
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method: editingId === null ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -247,7 +309,7 @@ function App() {
   async function removeRecord(record: DriverRecord) {
     if (!window.confirm(`Excluir o lançamento de ${record.driver_name} em ${dateLabel(selectedDate, { dateStyle: 'short' })}?`)) return;
     try {
-      const response = await fetch(`/api/productivity/${record.id}?date=${selectedDate}`, { method: 'DELETE' });
+      const response = await apiFetch(`/api/productivity/${record.id}?date=${selectedDate}`, { method: 'DELETE' });
       if (!response.ok && response.status !== 204) throw new Error(await responseError(response));
       setToast('Lançamento removido.');
       await loadRecords(selectedDate);
@@ -258,7 +320,7 @@ function App() {
 
   async function exportExcel() {
     try {
-      const response = await fetch(`/api/productivity/export?${view === 'month' ? `month=${selectedDate.slice(0, 7)}` : `date=${selectedDate}`}`);
+      const response = await apiFetch(`/api/productivity/export?${view === 'month' ? `month=${selectedDate.slice(0, 7)}` : `date=${selectedDate}`}`);
       if (!response.ok) throw new Error(await responseError(response));
       const blob = await response.blob();
       const downloadUrl = URL.createObjectURL(blob);
@@ -330,6 +392,19 @@ function App() {
     }
   }
 
+  if (checkingAuth) return <main className="auth-screen"><LoaderCircle className="spin" size={32} /><p>Verificando acesso…</p></main>;
+  if (!session) return <main className="auth-screen"><section className="auth-card">
+    <img src="/alencar-logo.png" alt="Grupo Alencar Log" />
+    <span className="eyebrow">PAINEL OPERACIONAL</span><h1>PRODUTIVIDADE DE MOTORISTAS</h1>
+    <p>Entre com sua conta de administrador do STATUS OPERACIONAL.</p>
+    <form onSubmit={login}>
+      <label>E-MAIL<input type="email" autoComplete="username" value={loginEmail} onChange={event => setLoginEmail(event.target.value)} required /></label>
+      <label>SENHA<input type="password" autoComplete="current-password" value={loginPassword} onChange={event => setLoginPassword(event.target.value)} required /></label>
+      {loginError && <p className="auth-error" role="alert">{loginError}</p>}
+      <button className="btn btn-primary" type="submit" disabled={loggingIn}>{loggingIn ? 'ENTRANDO…' : 'ENTRAR'}</button>
+    </form>
+  </section></main>;
+
   return (
     <main className="app-shell" ref={exportRef}>
       <div className="dashboard-wrap">
@@ -351,6 +426,7 @@ function App() {
               <div><span>MÊS DE REFERÊNCIA</span><strong>{monthLabel || '—'}</strong><small>{view === 'day' ? `DATA: ${dateLabel(selectedDate, { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 'CONSOLIDADO MENSAL'}</small></div>
             </div>
             <div className="daily-total"><span>TOTAL GERAL</span><strong>{number(totalLegs)}</strong><small>MOVIMENTOS</small></div>
+            <button className="logout-button" onClick={() => void logout()} title={`Sair de ${session.user.email}`} aria-label="Sair"><LogOut size={17} /></button>
           </div>
         </header>
 

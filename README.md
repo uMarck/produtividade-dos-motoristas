@@ -4,10 +4,10 @@ Painel diário e mensal para acompanhar perna inteira, meia perna, total de movi
 
 ## Produção na Vercel
 
-O frontend Vite usa as funções em `api/productivity/` para persistir cada lançamento em um Vercel Blob privado. Configure o armazenamento no projeto para disponibilizar `BLOB_READ_WRITE_TOKEN` nos ambientes de produção e preview. Não salve esse token no repositório. O código antigo em `server/` é mantido apenas para instalações Express/MySQL legadas; a Vercel usa as funções em `api/`.
+O frontend Vite usa as funções em `api/productivity/` para persistir cada lançamento em um Vercel Blob privado. A conta do STATUS OPERACIONAL no projeto Supabase `grupo-alencar-operacional` autentica os dois administradores existentes; a API valida cada token no servidor e só aceita `admin@alencarlog.com.br` e `admin1@alencarlog.com.br`. Não é preciso criar outras contas. A sessão deste site é própria do domínio, então entre aqui com o mesmo e-mail e senha. Os dados não ficam no navegador: duas máquinas com acesso ao site consultam o mesmo armazenamento; o painel atualiza ao voltar ao foco e a cada 30 segundos enquanto estiver aberto.
 
-Cada lançamento tem uma data de referência, ID estável e arquivo próprio, permitindo consultas por dia ou por mês. A interface não exige login; pessoas com acesso público ao endereço podem consultar e alterar os registros. Faça backup periódico por Excel.
+Configure `BLOB_READ_WRITE_TOKEN`, `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` no projeto Vercel. A chave publishable pode ser incluída no frontend; nunca use a chave secret/service role nele. Não salve tokens no repositório. O código antigo em `server/` permanece apenas para instalações Express/MySQL legadas; a Vercel usa `api/`.
 
 ## Desenvolvimento
 
-Node.js 22+, pnpm 11.25.0. Execute `pnpm install`, `pnpm dev:web` para a interface e use `vercel dev` para testar as funções com o armazenamento conectado. `pnpm build` e `pnpm exec tsc --noEmit` verificam o frontend.
+Node.js 22+, pnpm 11.25.0. Execute `pnpm install`, `pnpm dev:web` para a interface e use `vercel dev` para testar as funções com as variáveis conectadas. `pnpm build` e `pnpm exec tsc --noEmit` verificam o frontend.

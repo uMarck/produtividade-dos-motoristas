@@ -1,7 +1,9 @@
 import { all, save, remove, validate, validDate, fail } from '../_store.js';
+import { requireAdmin } from '../_auth.js';
 
 export default async function handler(req, res) {
   try {
+    if (!await requireAdmin(req, res)) return;
     const date = req.query.date || req.body?.reportDate;
     if (!validDate(date) || typeof req.query.id !== 'string' || !/^[a-f0-9-]{36}$/.test(req.query.id)) return res.status(400).json({ error: 'Registro inválido.' });
     const rows = await all(`${date}/`);

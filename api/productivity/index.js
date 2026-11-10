@@ -1,7 +1,9 @@
 import { all, save, validate, validDate, validMonth, fail } from '../_store.js';
+import { requireAdmin } from '../_auth.js';
 
 export default async function handler(req, res) {
   try {
+    if (!await requireAdmin(req, res)) return;
     if (req.method === 'GET') {
       if (req.query.month) {
         if (!validMonth(req.query.month)) return res.status(400).json({ error: 'Mês inválido.' });

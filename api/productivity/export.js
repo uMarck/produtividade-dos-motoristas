@@ -1,9 +1,11 @@
 import { all, validDate, validMonth, fail } from '../_store.js';
 import { createProductivityWorkbook } from '../_workbook.js';
 import XLSX from 'xlsx-js-style';
+import { requireAdmin } from '../_auth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
+  if (!await requireAdmin(req, res)) return;
   const { date, month } = req.query;
   if (month ? !validMonth(month) : !validDate(date)) return res.status(400).json({ error: 'Período inválido.' });
   try {
