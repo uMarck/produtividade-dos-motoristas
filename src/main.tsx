@@ -377,7 +377,7 @@ function App() {
           <MetricCard icon={BarChart3} title="TOTAL GERAL" total={totalLegs} share={percentage(totalLegs, totalLegs)} tone="white" description="pernas movimentadas no período" />
         </section>
 
-        <section className="dashboard-grid" aria-label="Painel de produtividade">
+        <section className={`dashboard-grid ${view === 'month' ? 'monthly-layout' : ''}`} aria-label="Painel de produtividade">
           <div className="analytics-column">
             <Panel title="PRODUTIVIDADE POR MOTORISTA" icon={BarChart3} className="bar-panel">
               <div className="chart-legend"><span><i className="legend-dot lime" /> Perna inteira</span><span><i className="legend-dot cyan" /> Meia perna</span></div>
