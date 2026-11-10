@@ -1,13 +1,13 @@
-# Produtividade Alencar Log
+# Produtividade de motoristas · Alencar Log
 
-Dashboard diário de produtividade de motoristas. Cada lançamento reúne motorista, perna inteira, meia perna, `ENTRADA NA BASE` (chegada à empresa), `SAÍDA DA BASE` (início do trabalho) e `ENCERRAMENTO DA OPERAÇÃO`. `TOTAL DE PERNAS` é calculado por perna inteira + meia perna. `MÉDIA DE CONTAINER/HORA` divide o total de pernas pelas horas entre saída da base e encerramento da operação, inclusive se atravessar a meia-noite. A planilha Excel exporta todos os registros da data e deixa os horários e quantidades editáveis; suas fórmulas atualizam média e duração automaticamente. Os lançamentos são persistidos no banco MySQL gerenciado do projeto e recuperados por data de referência. Registros históricos sem a hora de chegada permanecem com esse campo em branco.
+Painel diário e mensal para acompanhar perna inteira, meia perna, total de movimentos, tempo de operação e containers por hora. A visão mensal consolida motoristas pelo nome e mostra os dias trabalhados; sua exportação Excel inclui resumo por motorista e todos os lançamentos datados. O Excel diário mantém as abas “Painel diário” e “Todos os dados”, com fórmulas e horários editáveis. PDF e JPEG exportam o painel exibido.
+
+## Produção na Vercel
+
+O frontend Vite usa as funções em `api/productivity/` para persistir cada lançamento em um Vercel Blob privado. Configure o armazenamento no projeto para disponibilizar `BLOB_READ_WRITE_TOKEN` nos ambientes de produção e preview. Não salve esse token no repositório. O código antigo em `server/` é mantido apenas para instalações Express/MySQL legadas; a Vercel usa as funções em `api/`.
+
+Cada lançamento tem uma data de referência, ID estável e arquivo próprio, permitindo consultas por dia ou por mês. A interface não exige login; pessoas com acesso público ao endereço podem consultar e alterar os registros. Faça backup periódico por Excel.
 
 ## Desenvolvimento
 
-Requer Node.js 22+, pnpm 11.25.0 e `DATABASE_URL` disponibilizada pelo ambiente do projeto. Instale com `pnpm install` e inicie a API e o Vite com `pnpm dev`; a interface fica na porta 3000 e o proxy encaminha `/api` à API na porta 4000.
-
-## Produção
-
-`pnpm build` compila o frontend. O servidor Express serve os arquivos compilados, inicializa/migra a tabela de produtividade de forma idempotente e utiliza `DATABASE_URL` no ambiente de execução. A API disponibiliza `/api/health`.
-
-Sem autenticação, conforme solicitado para este painel operacional: qualquer pessoa com acesso ao site pode consultar, inserir, editar e excluir lançamentos. Não publique o painel em um domínio com acesso público sem considerar essa característica.
+Node.js 22+, pnpm 11.25.0. Execute `pnpm install`, `pnpm dev:web` para a interface e use `vercel dev` para testar as funções com o armazenamento conectado. `pnpm build` e `pnpm exec tsc --noEmit` verificam o frontend.

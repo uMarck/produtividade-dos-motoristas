@@ -110,6 +110,7 @@ async function responseError(response: Response) {
 
 function App() {
   const [selectedDate, setSelectedDate] = useState(localDateValue());
+  const [view, setView] = useState<'day' | 'month'>('day');
   const [records, setRecords] = useState<DriverRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,19 +122,25 @@ function App() {
   const [loadError, setLoadError] = useState('');
   const [exportAllRecords, setExportAllRecords] = useState(false);
   const exportRef = useRef<HTMLElement | null>(null);
+  const requestSequence = useRef(0);
 
   async function loadRecords(date = selectedDate) {
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setLoadError('');
     try {
-      const response = await fetch(`/api/productivity?date=${encodeURIComponent(date)}`);
+      const period = view === 'month' ? `month=${encodeURIComponent(date.slice(0, 7))}` : `date=${encodeURIComponent(date)}`;
+      const response = await fetch(`/api/productivity?${period}`);
       if (!response.ok) throw new Error(await responseError(response));
-      setRecords(await response.json());
+      const result = await response.json();
+      if (sequence !== requestSequence.current) return;
+      setRecords(result);
     } catch (error) {
+      if (sequence !== requestSequence.current) return;
       setRecords([]);
       setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os dados do dia.');
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
   }
 
@@ -141,7 +148,7 @@ function App() {
     void loadRecords(selectedDate);
     // Intentionally run only when the selected report date changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, [selectedDate, view]);
 
   useEffect(() => {
     if (!toast) return;
@@ -149,9 +156,21 @@ function App() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  const displayRecords = useMemo(() => {
+    if (view === 'day') return records;
+    const grouped = new Map<string, DriverRecord & { days: Set<string>; minutes: number }>();
+    for (const row of records) {
+      const key = row.driver_name.toLocaleLowerCase('pt-BR');
+      const entry = grouped.get(key) || { ...row, whole_legs: 0, half_legs: 0, days: new Set<string>(), minutes: 0 };
+      entry.whole_legs += Number(row.whole_legs); entry.half_legs += Number(row.half_legs);
+      entry.days.add(row.report_date); entry.minutes += durationMinutes(row.base_departure, row.activity_end);
+      grouped.set(key, entry);
+    }
+    return [...grouped.values()].map(row => ({ ...row, id: row.driver_name, base_arrival: `${row.days.size} dias`, base_departure: '—', activity_end: '—', operation_time: `${Math.floor(row.minutes / 60)}:${String(row.minutes % 60).padStart(2, '0')}` }));
+  }, [records, view]);
   const sortedRecords = useMemo(
-    () => [...records].sort((a, b) => legs(b) - legs(a) || a.driver_name.localeCompare(b.driver_name, 'pt-BR')),
-    [records],
+    () => [...displayRecords].sort((a, b) => legs(b) - legs(a) || a.driver_name.localeCompare(b.driver_name, 'pt-BR')),
+    [displayRecords],
   );
   const filteredRecords = useMemo(() => {
     const query = searchTerm.trim().toLocaleLowerCase('pt-BR');
@@ -208,7 +227,7 @@ function App() {
     }
     setSaving(true);
     try {
-      const url = editingId === null ? '/api/productivity' : `/api/productivity/${editingId}`;
+      const url = editingId === null ? '/api/productivity' : `/api/productivity/${editingId}?date=${selectedDate}`;
       const response = await fetch(url, {
         method: editingId === null ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -228,7 +247,7 @@ function App() {
   async function removeRecord(record: DriverRecord) {
     if (!window.confirm(`Excluir o lançamento de ${record.driver_name} em ${dateLabel(selectedDate, { dateStyle: 'short' })}?`)) return;
     try {
-      const response = await fetch(`/api/productivity/${record.id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/productivity/${record.id}?date=${selectedDate}`, { method: 'DELETE' });
       if (!response.ok && response.status !== 204) throw new Error(await responseError(response));
       setToast('Lançamento removido.');
       await loadRecords(selectedDate);
@@ -239,16 +258,16 @@ function App() {
 
   async function exportExcel() {
     try {
-      const response = await fetch(`/api/productivity/export?date=${encodeURIComponent(selectedDate)}`);
+      const response = await fetch(`/api/productivity/export?${view === 'month' ? `month=${selectedDate.slice(0, 7)}` : `date=${selectedDate}`}`);
       if (!response.ok) throw new Error(await responseError(response));
       const blob = await response.blob();
       const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `alencar-produtividade-${fileSlug(selectedDate)}.xlsx`;
+      link.download = `alencar-produtividade-${fileSlug(view === 'month' ? selectedDate.slice(0, 7) : selectedDate)}.xlsx`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-      setToast('Planilha Excel exportada com a identidade da empresa.');
+      setToast('Planilha de produtividade por motorista exportada.');
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Não foi possível exportar o Excel.');
     }
@@ -316,20 +335,20 @@ function App() {
       <div className="dashboard-wrap">
         <header className="masthead">
           <div className="brand-lockup">
-            <div className="brand-mark" aria-hidden="true"><span>A</span><span>L</span><i /></div>
+            <img className="brand-logo" src="/brand.svg" alt="Alencar Log" />
             <div className="brand-name"><span className="brand-overline">GRUPO</span><strong>ALENCAR</strong><em>LOG</em></div>
             <span className="brand-divider" />
             <div className="truck-emblem"><Truck size={31} strokeWidth={2.2} /></div>
           </div>
           <div className="page-title">
-            <span className="eyebrow">PAINEL OPERACIONAL <b>•</b> MOVIMENTAÇÃO DIÁRIA</span>
+            <span className="eyebrow">PAINEL OPERACIONAL <b>•</b> MOVIMENTAÇÃO {view === 'day' ? 'DIÁRIA' : 'MENSAL'}</span>
             <h1>PRODUTIVIDADE <span>DE MOTORISTAS</span></h1>
             <p>Mais eficiência. Cada movimento conta.</p>
           </div>
           <div className="header-meta">
             <div className="date-display">
               <CalendarDays className="meta-icon" size={27} />
-              <div><span>MÊS DE REFERÊNCIA</span><strong>{monthLabel || '—'}</strong><small>DATA: {dateLabel(selectedDate, { day: '2-digit', month: '2-digit', year: 'numeric' })}</small></div>
+              <div><span>MÊS DE REFERÊNCIA</span><strong>{monthLabel || '—'}</strong><small>{view === 'day' ? `DATA: ${dateLabel(selectedDate, { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 'CONSOLIDADO MENSAL'}</small></div>
             </div>
             <div className="daily-total"><span>TOTAL GERAL</span><strong>{number(totalLegs)}</strong><small>MOVIMENTOS</small></div>
           </div>
@@ -337,15 +356,16 @@ function App() {
 
         <section className="toolbar" aria-label="Controles do relatório">
           <div className="reference-control">
-            <label htmlFor="reference-date">DATA DE REFERÊNCIA</label>
-            <div className="date-input-wrap"><CalendarDays size={17} /><input id="reference-date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} /></div>
+            <label htmlFor="reference-date">{view === 'day' ? 'DATA DE REFERÊNCIA' : 'MÊS DE REFERÊNCIA'}</label>
+            <div className="date-input-wrap"><CalendarDays size={17} /><input id="reference-date" type={view === 'day' ? 'date' : 'month'} value={view === 'day' ? selectedDate : selectedDate.slice(0, 7)} onChange={(event) => setSelectedDate(view === 'day' ? event.target.value : `${event.target.value}-01`)} /></div>
           </div>
-          <p className="date-caption">{longDate ? longDate.charAt(0).toLocaleUpperCase('pt-BR') + longDate.slice(1) : 'Selecione a data do relatório'}</p>
+          <div className="period-switch" role="group" aria-label="Período"><button className={view === 'day' ? 'active' : ''} onClick={() => setView('day')}>DIA</button><button className={view === 'month' ? 'active' : ''} onClick={() => setView('month')}>MÊS</button></div>
+          <p className="date-caption">{view === 'month' ? monthLabel : longDate ? longDate.charAt(0).toLocaleUpperCase('pt-BR') + longDate.slice(1) : 'Selecione a data do relatório'}</p>
           <div className="toolbar-actions">
-            <button className="btn btn-outline" onClick={exportExcel} disabled={!records.length} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> EXPORTAR EXCEL</button>
-            <button className="btn btn-outline" onClick={exportPdf} disabled={!records.length} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
-            <button className="btn btn-outline" onClick={exportJpeg} disabled={!records.length} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
-            <button className="btn btn-primary" onClick={startNew}><Plus size={17} /> NOVO REGISTRO</button>
+            <button className="btn btn-outline" onClick={exportExcel} disabled={!records.length || loading || Boolean(loadError)} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> EXPORTAR EXCEL</button>
+            <button className="btn btn-outline" onClick={exportPdf} disabled={!records.length || loading || Boolean(loadError)} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
+            <button className="btn btn-outline" onClick={exportJpeg} disabled={!records.length || loading || Boolean(loadError)} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
+            {view === 'day' && <button className="btn btn-primary" onClick={startNew}><Plus size={17} /> NOVO REGISTRO</button>}
           </div>
         </section>
 
@@ -378,7 +398,7 @@ function App() {
               <div className="panel-title"><span className="panel-icon"><Truck size={19} /></span><h2>PRODUTIVIDADE DE MOTORISTAS</h2></div>
               <span className="roster-count">{number(records.length)} {records.length === 1 ? 'MOTORISTA' : 'MOTORISTAS'}</span>
             </div>
-            <div className="table-tools"><label className="search-box"><Search size={16} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar motorista" aria-label="Buscar motorista" /></label><button className="add-mini" onClick={startNew}><Plus size={16} /><span>ADICIONAR</span></button></div>
+            <div className="table-tools"><label className="search-box"><Search size={16} /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar motorista" aria-label="Buscar motorista" /></label><button className="add-mini" onClick={startNew} hidden={view === 'month'}><Plus size={16} /><span>ADICIONAR</span></button></div>
             <div className="table-scroll">
               <table>
                 <thead><tr><th>#</th><th>MOTORISTA</th><th>PERNA<br />INTEIRA</th><th>MEIA<br />PERNA</th><th>TOTAL</th><th>ENTRADA<br />NA BASE</th><th>SAÍDA<br />DA BASE</th><th>ENCERRAMENTO<br />DA OPERAÇÃO</th><th>MÉDIA DE<br />CONTAINER/HORA</th><th>TEMPO DE<br />OPERAÇÃO</th><th className="actions-col"><span className="sr-only">Ações</span></th></tr></thead>
@@ -389,14 +409,14 @@ function App() {
                       <td><span className={`rank-number ${rank <= 3 ? 'rank-highlight' : ''}`}>{rank}</span></td>
                       <td className="driver-cell">{record.driver_name}</td>
                       <td>{number(record.whole_legs)}</td><td>{number(record.half_legs)}</td><td className="total-cell">{number(legs(record))}</td>
-                      <td>{record.base_arrival || '—'}</td><td>{record.base_departure}</td><td>{record.activity_end}</td><td className="avg-cell">{number(hourlyAverage(record), 1)}</td><td>{operationDuration(record.base_departure, record.activity_end)}</td>
-                      <td className="row-actions"><button aria-label={`Editar ${record.driver_name}`} title="Editar" onClick={() => startEdit(record)}><Pencil size={14} /></button><button aria-label={`Excluir ${record.driver_name}`} title="Excluir" onClick={() => void removeRecord(record)}><Trash2 size={14} /></button></td>
+                      <td>{record.base_arrival || '—'}</td><td>{record.base_departure}</td><td>{record.activity_end}</td><td className="avg-cell">{number(view === 'month' ? (Number(record.operation_time.split(':')[0]) * 60 + Number(record.operation_time.split(':')[1]) ? legs(record) / ((Number(record.operation_time.split(':')[0]) * 60 + Number(record.operation_time.split(':')[1])) / 60) : 0) : hourlyAverage(record), 1)}</td><td>{view === 'month' ? record.operation_time : operationDuration(record.base_departure, record.activity_end)}</td>
+                      <td className="row-actions">{view === 'day' && <><button aria-label={`Editar ${record.driver_name}`} title="Editar" onClick={() => startEdit(record)}><Pencil size={14} /></button><button aria-label={`Excluir ${record.driver_name}`} title="Excluir" onClick={() => void removeRecord(record)}><Trash2 size={14} /></button></>}</td>
                     </tr>;
                   }) : <tr><td colSpan={11} className="table-empty">{searchTerm ? 'Nenhum motorista encontrado.' : 'Nenhum lançamento nesta data. Clique em “Novo registro” para começar.'}</td></tr>}
                 </tbody>
               </table>
             </div>
-            <div className="table-footnote"><span><i className="status-dot" /> DADOS DO DIA</span><span>MÉDIA = TOTAL DE PERNAS ÷ HORAS ENTRE SAÍDA DA BASE E ENCERRAMENTO DA OPERAÇÃO</span></div>
+            <div className="table-footnote"><span><i className="status-dot" /> DADOS DO {view === 'day' ? 'DIA' : 'MÊS'}</span><span>MÉDIA = TOTAL DE PERNAS ÷ HORAS ENTRE SAÍDA DA BASE E ENCERRAMENTO DA OPERAÇÃO</span></div>
           </section>
         </section>
 
@@ -418,7 +438,7 @@ function App() {
         </section>
       </div>}
 
-      {toast && <div className="toast-message" role="status">{toast}</div>}
+      {toast && <div className="toast-message" role="status"><span className="toast-symbol">✓</span>{toast}</div>}
     </main>
   );
 }
