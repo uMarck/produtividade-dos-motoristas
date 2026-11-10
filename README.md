@@ -11,3 +11,7 @@ Configure `BLOB_READ_WRITE_TOKEN`, `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHA
 ## Desenvolvimento
 
 Node.js 22+, pnpm 11.25.0. Execute `pnpm install`, `pnpm dev:web` para a interface e use `vercel dev` para testar as funções com as variáveis conectadas. `pnpm build` e `pnpm exec tsc --noEmit` verificam o frontend.
+
+## Recuperação de senha
+
+O login oferece “Criar ou recuperar senha” para os dois administradores existentes. O Supabase envia um link para o e-mail cadastrado; a página aceita o retorno automático e oferece a validação manual do link caso o redirecionamento do projeto de Auth aponte para outro endereço. A alteração da senha afeta também o STATUS OPERACIONAL, pois os dois sites usam a mesma identidade no mesmo projeto Supabase. Nenhuma senha é armazenada no código ou enviada ao servidor Vercel.

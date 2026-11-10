@@ -123,6 +123,13 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<'request' | 'set' | null>(null);
+  const [recoverySent, setRecoverySent] = useState(false);
+  const [recoveryLink, setRecoveryLink] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [selectedDate, setSelectedDate] = useState(localDateValue());
   const [view, setView] = useState<'day' | 'month'>('day');
   const [records, setRecords] = useState<DriverRecord[]>([]);
@@ -139,7 +146,8 @@ function App() {
   const requestSequence = useRef(0);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, next) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryStep('set');
       setSession(next && permittedEmails.has(next.user.email?.toLowerCase() || '') ? next : null);
       setCheckingAuth(false);
     });
@@ -168,6 +176,56 @@ function App() {
     if (error) setLoginError('Não foi possível entrar. Confira o e-mail e a senha usados no STATUS OPERACIONAL.');
     else setLoginPassword('');
     setLoggingIn(false);
+  }
+
+  async function requestRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRecoveryError('');
+    if (!permittedEmails.has(loginEmail.trim().toLowerCase())) {
+      setRecoveryError('Informe um dos e-mails de administrador autorizados.');
+      return;
+    }
+    setRecoveryBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(loginEmail.trim(), {
+      redirectTo: window.location.origin,
+    });
+    setRecoveryBusy(false);
+    if (error) setRecoveryError('Não foi possível enviar o e-mail de recuperação. Tente novamente mais tarde.');
+    else setRecoverySent(true);
+  }
+
+  async function verifyRecoveryLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRecoveryError('');
+    try {
+      const link = new URL(recoveryLink.trim());
+      if (link.protocol !== 'https:' || link.hostname !== new URL(import.meta.env.VITE_SUPABASE_URL).hostname || link.pathname !== '/auth/v1/verify' || link.searchParams.get('type') !== 'recovery') throw new Error('Link inválido. Copie o link completo do e-mail de recuperação.');
+      const token_hash = link.searchParams.get('token_hash') || link.searchParams.get('token');
+      if (!token_hash) throw new Error('O link não contém um código de recuperação.');
+      setRecoveryBusy(true);
+      const { error } = await supabase.auth.verifyOtp({ token_hash, type: 'recovery' });
+      if (error) throw new Error('Link expirado ou já utilizado. Solicite outro e-mail.');
+      setRecoveryLink('');
+      setRecoveryStep('set');
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : 'Link inválido.');
+    } finally { setRecoveryBusy(false); }
+  }
+
+  async function saveNewPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRecoveryError('');
+    if (newPassword.length < 8) return setRecoveryError('Use pelo menos 8 caracteres.');
+    if (newPassword !== confirmPassword) return setRecoveryError('As senhas não conferem.');
+    setRecoveryBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setRecoveryBusy(false);
+    if (error) return setRecoveryError('Não foi possível salvar a senha. Solicite outro link e tente novamente.');
+    setNewPassword(''); setConfirmPassword('');
+    await supabase.auth.signOut();
+    setRecoveryStep(null);
+    setRecoverySent(false);
+    setLoginError('Senha atualizada. Entre com a nova senha.');
   }
 
   async function logout() {
@@ -393,6 +451,28 @@ function App() {
   }
 
   if (checkingAuth) return <main className="auth-screen"><LoaderCircle className="spin" size={32} /><p>Verificando acesso…</p></main>;
+  if (recoveryStep) return <main className="auth-screen"><section className="auth-card">
+    <img src="/alencar-logo.png" alt="Grupo Alencar Log" />
+    <span className="eyebrow">RECUPERAÇÃO DE ACESSO</span><h1>{recoveryStep === 'request' ? 'CRIAR NOVA SENHA' : 'DEFINIR NOVA SENHA'}</h1>
+    <p>Esta conta é compartilhada com o STATUS OPERACIONAL. A nova senha também substituirá a senha usada lá.</p>
+    {recoveryStep === 'request' ? <>
+      <form onSubmit={requestRecovery}>
+        <label>E-MAIL DO ADMINISTRADOR<input type="email" autoComplete="email" value={loginEmail} onChange={event => setLoginEmail(event.target.value)} required /></label>
+        <button className="btn btn-primary" type="submit" disabled={recoveryBusy}>{recoveryBusy ? 'ENVIANDO…' : 'ENVIAR LINK DE RECUPERAÇÃO'}</button>
+      </form>
+      {recoverySent && <><p role="status">Confira o e-mail e abra o link recebido. Se ele abrir outro endereço, copie o link completo sem clicar nele e cole abaixo.</p>
+        <form onSubmit={verifyRecoveryLink}>
+          <label>LINK DO E-MAIL<input type="url" value={recoveryLink} onChange={event => setRecoveryLink(event.target.value)} placeholder="https://…/auth/v1/verify?…" required /></label>
+          <button className="btn btn-outline" type="submit" disabled={recoveryBusy}>VALIDAR LINK</button>
+        </form></>}
+    </> : <form onSubmit={saveNewPassword}>
+      <label>NOVA SENHA<input type="password" autoComplete="new-password" minLength={8} value={newPassword} onChange={event => setNewPassword(event.target.value)} required /></label>
+      <label>CONFIRMAR SENHA<input type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required /></label>
+      <button className="btn btn-primary" type="submit" disabled={recoveryBusy}>{recoveryBusy ? 'SALVANDO…' : 'SALVAR NOVA SENHA'}</button>
+    </form>}
+    {recoveryError && <p className="auth-error" role="alert">{recoveryError}</p>}
+    <button className="auth-link" type="button" onClick={() => { setRecoveryStep(null); setRecoveryError(''); }}>VOLTAR AO LOGIN</button>
+  </section></main>;
   if (!session) return <main className="auth-screen"><section className="auth-card">
     <img src="/alencar-logo.png" alt="Grupo Alencar Log" />
     <span className="eyebrow">PAINEL OPERACIONAL</span><h1>PRODUTIVIDADE DE MOTORISTAS</h1>
@@ -403,6 +483,7 @@ function App() {
       {loginError && <p className="auth-error" role="alert">{loginError}</p>}
       <button className="btn btn-primary" type="submit" disabled={loggingIn}>{loggingIn ? 'ENTRANDO…' : 'ENTRAR'}</button>
     </form>
+    <button className="auth-link" type="button" onClick={() => { setRecoveryStep('request'); setRecoveryError(''); }}>CRIAR OU RECUPERAR SENHA</button>
   </section></main>;
 
   return (
