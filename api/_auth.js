@@ -23,5 +23,10 @@ export async function requireAdmin(req, res) {
     res.status(403).json({ error: 'Esta conta não tem acesso à produtividade.' });
     return false;
   }
+  // Scope every database request to this verified user's RLS policies.
+  req.productivityDb = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
+    global: { headers: { Authorization: req.headers.authorization } },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
   return true;
 }

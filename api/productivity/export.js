@@ -9,7 +9,8 @@ export default async function handler(req, res) {
   const { date, month } = req.query;
   if (month ? !validMonth(month) : !validDate(date)) return res.status(400).json({ error: 'Período inválido.' });
   try {
-    const rows = await all(month || `${date}/`);
+    const rows = await all(month || `${date}/`, req, res);
+    if (res.getHeader('X-History-Incomplete')) return res.status(503).json({ error: 'O histórico anterior está temporariamente indisponível. A exportação completa voltará quando o armazenamento antigo for liberado.' });
     let workbook;
     if (month) {
       // Detail rows retain their actual report dates, even when the same driver appears on many days.

@@ -141,6 +141,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [historyIncomplete, setHistoryIncomplete] = useState(false);
   const [exportAllRecords, setExportAllRecords] = useState(false);
   const exportRef = useRef<HTMLElement | null>(null);
   const requestSequence = useRef(0);
@@ -231,6 +232,7 @@ function App() {
   async function logout() {
     requestSequence.current += 1;
     setRecords([]);
+    setHistoryIncomplete(false);
     setLoading(true);
     await supabase.auth.signOut();
   }
@@ -246,9 +248,11 @@ function App() {
       const result = await response.json();
       if (sequence !== requestSequence.current) return;
       setRecords(result);
+      setHistoryIncomplete(response.headers.get('X-History-Incomplete') === 'true');
     } catch (error) {
       if (sequence !== requestSequence.current) return;
       setRecords([]);
+      setHistoryIncomplete(false);
       setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os dados do dia.');
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
@@ -519,14 +523,15 @@ function App() {
           <div className="period-switch" role="group" aria-label="Período"><button className={view === 'day' ? 'active' : ''} onClick={() => setView('day')}>DIA</button><button className={view === 'month' ? 'active' : ''} onClick={() => setView('month')}>MÊS</button></div>
           <p className="date-caption">{view === 'month' ? monthLabel : longDate ? longDate.charAt(0).toLocaleUpperCase('pt-BR') + longDate.slice(1) : 'Selecione a data do relatório'}</p>
           <div className="toolbar-actions">
-            <button className="btn btn-outline" onClick={exportExcel} disabled={!records.length || loading || Boolean(loadError)} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> EXPORTAR EXCEL</button>
-            <button className="btn btn-outline" onClick={exportPdf} disabled={!records.length || loading || Boolean(loadError)} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
-            <button className="btn btn-outline" onClick={exportJpeg} disabled={!records.length || loading || Boolean(loadError)} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
+            <button className="btn btn-outline" onClick={exportExcel} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> EXPORTAR EXCEL</button>
+            <button className="btn btn-outline" onClick={exportPdf} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
+            <button className="btn btn-outline" onClick={exportJpeg} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
             {view === 'day' && <button className="btn btn-primary" onClick={startNew}><Plus size={17} /> NOVO REGISTRO</button>}
           </div>
         </section>
 
         {loadError && <div className="error-banner"><span>{loadError}</span><button onClick={() => void loadRecords()}><span>RECARREGAR</span></button></div>}
+        {historyIncomplete && <div className="error-banner" role="alert"><span>O histórico antigo está temporariamente bloqueado pelo limite do Vercel Blob. Novos lançamentos são salvos no Supabase. Os totais e as exportações completos voltam após a liberação do armazenamento.</span><button onClick={() => void loadRecords()}><span>RECARREGAR</span></button></div>}
 
         <section className="metric-grid" aria-label="Totais da demanda do dia">
           <MetricCard icon={Truck} title="PERNA INTEIRA" total={totals.whole} share={percentage(totals.whole, totalLegs)} tone="lime" description="movimentos · período selecionado" />
