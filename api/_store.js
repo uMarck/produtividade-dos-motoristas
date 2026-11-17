@@ -26,9 +26,13 @@ export async function all(prefix, req, res) {
   if (error) throw error;
   const records = new Map();
   const covered = new Set((stored || []).map(row => `${row.report_date}/${row.id}`));
+  const period = `${month ? 'month' : 'day'}:${month ? prefix : prefix.slice(0, 10)}`;
+  const checks = month ? [period] : [period, `month:${prefix.slice(0, 7)}`];
+  const { data: migrated, error: markerError } = await req.productivityDb.from('alencar_productivity_migrated_periods').select('period').in('period', checks);
+  if (markerError) throw markerError;
   let cursor;
   const blobs = [];
-  try {
+  if (!migrated?.length) try {
     do {
       const page = await list({ prefix: `produtividade/${prefix}`, cursor, limit: 1000 });
       blobs.push(...page.blobs);
@@ -40,15 +44,19 @@ export async function all(prefix, req, res) {
       const key = blob.pathname.replace(/^produtividade\//, '').replace(/\.json$/, '');
       if (covered.has(key)) continue;
       const result = await get(blob.pathname, { access: 'private' });
-      if (result?.statusCode === 200) {
-        const row = JSON.parse(await new Response(result.stream).text());
-        records.set(`${row.report_date}/${row.id}`, row);
-        recovered.push({ report_date: row.report_date, id: row.id, data: row });
-      }
+      if (result?.statusCode !== 200) throw new Error(`Histórico incompleto: ${blob.pathname}`);
+      const row = JSON.parse(await new Response(result.stream).text());
+      records.set(`${row.report_date}/${row.id}`, row);
+      recovered.push({ report_date: row.report_date, id: row.id, data: row });
     }
+    let canMark = true;
     if (recovered.length) {
       const { error: migrationError } = await req.productivityDb.from(table).upsert(recovered, { onConflict: 'report_date,id', ignoreDuplicates: true });
-      if (migrationError) console.warn('Migração do histórico pendente:', migrationError);
+      if (migrationError) { console.warn('Migração do histórico pendente:', migrationError); canMark = false; }
+    }
+    if (canMark) {
+      const { error: markError } = await req.productivityDb.from('alencar_productivity_migrated_periods').insert({ period });
+      if (markError?.code !== '23505' && markError) console.warn('Marca de migração pendente:', markError);
     }
   } catch (blobError) {
     // The legacy store is suspended on Vercel. New Supabase records remain usable.
