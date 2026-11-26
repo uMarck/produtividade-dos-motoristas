@@ -1,5 +1,6 @@
 import { all, validDate, validMonth, fail } from '../_store.js';
 import { createProductivityWorkbook } from '../_workbook.js';
+import { addCheckerSheets } from '../_checker-workbook.js';
 import XLSX from 'xlsx-js-style';
 import { requireAdmin } from '../_auth.js';
 
@@ -9,10 +10,11 @@ export default async function handler(req, res) {
   const { date, month } = req.query;
   if (month ? !validMonth(month) : !validDate(date)) return res.status(400).json({ error: 'Período inválido.' });
   try {
-    const rows = await all(month || `${date}/`, req, res);
+    const rows = req.query.only === "checkers" ? [] : await all(month || `${date}/`, req, res);
     if (res.getHeader('X-History-Incomplete')) return res.status(503).json({ error: 'O histórico anterior está temporariamente indisponível. A exportação completa voltará quando o armazenamento antigo for liberado.' });
     let workbook;
-    if (month) {
+    if (req.query.only === 'checkers') workbook = XLSX.utils.book_new();
+    else if (month) {
       // Detail rows retain their actual report dates, even when the same driver appears on many days.
       const sheet = XLSX.utils.aoa_to_sheet([
         ['DATA', 'MOTORISTA', 'PERNA INTEIRA', 'MEIA PERNA', 'TOTAL', 'ENTRADA NA BASE', 'SAÍDA DA BASE', 'ENCERRAMENTO', 'TEMPO DE OPERAÇÃO', 'CONTAINERS/HORA'],
@@ -41,10 +43,10 @@ export default async function handler(req, res) {
       workbook=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook,overview,'Resumo mensal');
       XLSX.utils.book_append_sheet(workbook,sheet,'Lançamentos do mês');
-      workbook=XLSX.write(workbook,{bookType:'xlsx',type:'buffer'});
     } else workbook=createProductivityWorkbook(date,rows);
     res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition',`attachment; filename="alencar-produtividade-${(month || date).replaceAll('-','')}.xlsx"`);
-    return res.send(workbook);
+    await addCheckerSheets(workbook, req.productivityDb, date, month);
+    return res.send(XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }));
   } catch(error) { return fail(res,error); }
 }

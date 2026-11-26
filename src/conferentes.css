@@ -52,4 +52,10 @@
 .checker-track { height: 10px; background: #3c2a54; border-radius: 4px; margin-top: 4px; }
 .checker-track i { display: block; height: 100%; background: linear-gradient(90deg, #a56ee8, #ffd385); border-radius: inherit; }
 .checker-empty { color: #d5c4e9; font-size: 13px; margin: 16px 0 0; }
-body.exporting .checker-panel { display: none; }
+body.exporting .checker-form, body.exporting .checker-actions, body.exporting .checker-note { display: none; }
+body.exporting .checker-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+.checker-chart-scroll { overflow-x: auto; }
+.checker-chart-scroll .bar-chart { min-width: 465px; }
+body.exporting .checker-chart-scroll { overflow: visible; }
+body.exporting .export-partial-notice { display: block !important; }
+.export-partial-notice { display: none; color: #ffd385; font-size: 13px; }

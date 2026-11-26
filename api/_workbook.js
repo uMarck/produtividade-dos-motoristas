@@ -223,6 +223,6 @@ export function createProductivityWorkbook(reportDate, rawRows) {
   XLSX.utils.book_append_sheet(workbook, detailSheet, 'Todos os dados');
   if (!workbook.Workbook) workbook.Workbook = {};
   workbook.Workbook.CalcPr = { calcMode: 'auto', fullCalcOnLoad: true, forceFullCalc: true };
-  return XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+  return workbook;
 }
 

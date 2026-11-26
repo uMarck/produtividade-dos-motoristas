@@ -22,6 +22,7 @@ import type { LucideIcon } from 'lucide-react';
 import './styles.css';
 import './mobile-tweaks.css';
 import Conferentes from './Conferentes';
+import { rankCheckers, useCheckerData } from './checkerData';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -64,7 +65,7 @@ function localDateValue(date = new Date()) {
   return offsetDate.toISOString().slice(0, 10);
 }
 
-function legs(record: DriverRecord) {
+function legs(record: Pick<DriverRecord, 'whole_legs' | 'half_legs'>) {
   return Number(record.whole_legs) + Number(record.half_legs);
 }
 
@@ -146,6 +147,13 @@ function App() {
   const [exportAllRecords, setExportAllRecords] = useState(false);
   const exportRef = useRef<HTMLElement | null>(null);
   const requestSequence = useRef(0);
+  const capturing = useRef(false);
+  const checkers = useCheckerData(supabase, session?.user.id, selectedDate, view);
+  const checkerRanking = rankCheckers(checkers.entries);
+  const driversUnavailable = Boolean(loadError) || historyIncomplete;
+  const checkerOnlyExcel = driversUnavailable && checkerRanking.length > 0;
+  const exportDisabled = loading || checkers.loading || Boolean(checkers.error)
+    || (!checkerRanking.length && (!records.length || driversUnavailable));
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, next) => {
@@ -269,7 +277,7 @@ function App() {
 
   useEffect(() => {
     if (!session) return;
-    const refresh = () => { if (document.visibilityState === 'visible' && !formOpen) void loadRecords(selectedDate); };
+    const refresh = () => { if (document.visibilityState === 'visible' && !formOpen && !capturing.current) void loadRecords(selectedDate); };
     const timer = window.setInterval(refresh, 30_000);
     window.addEventListener('focus', refresh);
     return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); };
@@ -383,7 +391,7 @@ function App() {
 
   async function exportExcel() {
     try {
-      const response = await apiFetch(`/api/productivity/export?${view === 'month' ? `month=${selectedDate.slice(0, 7)}` : `date=${selectedDate}`}`);
+      const response = await apiFetch(`/api/productivity/export?${view === 'month' ? `month=${selectedDate.slice(0, 7)}` : `date=${selectedDate}`}${checkerOnlyExcel ? '&only=checkers' : ''}`);
       if (!response.ok) throw new Error(await responseError(response));
       const blob = await response.blob();
       const downloadUrl = URL.createObjectURL(blob);
@@ -392,7 +400,7 @@ function App() {
       link.download = `alencar-produtividade-${fileSlug(view === 'month' ? selectedDate.slice(0, 7) : selectedDate)}.xlsx`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-      setToast('Planilha de produtividade por motorista exportada.');
+      setToast('Planilha de produtividade exportada.');
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Não foi possível exportar o Excel.');
     }
@@ -400,6 +408,7 @@ function App() {
 
   async function captureDashboard() {
     if (!exportRef.current) throw new Error('O painel ainda está carregando.');
+    capturing.current = true;
     setExportAllRecords(true);
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     document.body.classList.add('exporting');
@@ -418,6 +427,7 @@ function App() {
     } finally {
       document.body.classList.remove('exporting');
       setExportAllRecords(false);
+      capturing.current = false;
     }
   }
 
@@ -525,15 +535,17 @@ function App() {
           <p className="date-caption">{view === 'month' ? monthLabel : longDate ? longDate.charAt(0).toLocaleUpperCase('pt-BR') + longDate.slice(1) : 'Selecione a data do relatório'}</p>
           <div className="toolbar-actions">
             <a className="btn checker-shortcut" href="#conferentes"><Trophy size={16} /> CONFERENTES</a>
-            <button className="btn btn-outline" onClick={exportExcel} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> EXPORTAR EXCEL</button>
-            <button className="btn btn-outline" onClick={exportPdf} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
-            <button className="btn btn-outline" onClick={exportJpeg} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
+            <button className="btn btn-outline" onClick={exportExcel} disabled={exportDisabled} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> {checkerOnlyExcel ? 'EXCEL · CONFERENTES' : 'EXPORTAR EXCEL'}</button>
+            <button className="btn btn-outline" onClick={exportPdf} disabled={exportDisabled} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
+            <button className="btn btn-outline" onClick={exportJpeg} disabled={exportDisabled} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
             {view === 'day' && <button className="btn btn-primary" onClick={startNew}><Plus size={17} /> NOVO REGISTRO</button>}
           </div>
         </section>
 
         {loadError && <div className="error-banner"><span>{loadError}</span><button onClick={() => void loadRecords()}><span>RECARREGAR</span></button></div>}
         {historyIncomplete && <div className="error-banner" role="alert"><span>O histórico antigo está temporariamente bloqueado pelo limite do Vercel Blob. Novos lançamentos são salvos no Supabase. Os totais e as exportações completos voltam após a liberação do armazenamento.</span><button onClick={() => void loadRecords()}><span>RECARREGAR</span></button></div>}
+
+        {driversUnavailable && <p className="export-partial-notice">Dados dos motoristas indisponíveis ou incompletos neste período.</p>}
 
         <section className="metric-grid" aria-label="Totais da demanda do dia">
           <MetricCard icon={Truck} title="PERNA INTEIRA" total={totals.whole} share={percentage(totals.whole, totalLegs)} tone="lime" description="movimentos · período selecionado" />
@@ -584,7 +596,11 @@ function App() {
           </section>
         </section>
 
-        <Conferentes key={selectedDate + view} date={selectedDate} view={view} />
+        <Conferentes key={session.user.id + selectedDate + view} db={supabase} owner={session.user.id}
+          date={selectedDate} view={view} {...checkers} ranking={checkerRanking}
+          chart={<div className="checker-chart-scroll"><BarChart checker records={checkerRanking.slice(0, 12).map(({ name, count }) => ({
+            id: name, driver_name: name, whole_legs: count, half_legs: 0,
+          }))} /></div>} />
 
         <footer className="brand-footer"><div className="footer-values"><span><Truck size={23} /> AGILIDADE</span><i /><span><strong className="shield-mark">✓</strong> SEGURANÇA</span><i /><span><strong className="gear-mark">✳</strong> EFICIÊNCIA</span><i /><span><strong className="people-mark">●●</strong> PARCERIAS</span><i /><span><strong className="chart-mark">↗</strong> RESULTADOS</span></div><div className="footer-signature"><span>JUNTOS, <b>MOVEMOS MAIS.</b></span><div className="footer-brand">ALENCAR <em>LOG</em></div></div></footer>
       </div>
@@ -625,7 +641,7 @@ function EmptyChart({ text }: { text: string }) {
   return <div className="chart-empty"><BarChart3 size={25} /><span>{text}</span></div>;
 }
 
-function BarChart({ records }: { records: DriverRecord[] }) {
+function BarChart({ records, checker = false }: { records: Pick<DriverRecord, 'id' | 'driver_name' | 'whole_legs' | 'half_legs'>[]; checker?: boolean }) {
   const width = 760;
   const height = 206;
   const margin = { left: 35, right: 10, top: 12, bottom: 37 };
@@ -637,7 +653,7 @@ function BarChart({ records }: { records: DriverRecord[] }) {
   const step = plotWidth / records.length;
   const barWidth = Math.min(39, step * 0.64);
   const gridCount = 5;
-  return <div className="bar-chart-wrap"><svg className="bar-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Gráfico de barras empilhadas com total de pernas por motorista">
+  return <div className="bar-chart-wrap"><svg className="bar-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={checker ? 'Gráfico de puxadas por conferente' : 'Gráfico de barras empilhadas com total de pernas por motorista'}>
     {Array.from({ length: gridCount + 1 }, (_, index) => {
       const value = axisStep * (gridCount - index);
       const y = margin.top + plotHeight * index / gridCount;
@@ -649,7 +665,7 @@ function BarChart({ records }: { records: DriverRecord[] }) {
       const halfHeight = (Number(record.half_legs) / maxValue) * plotHeight;
       const bottom = margin.top + plotHeight;
       const label = record.driver_name.trim().split(/\s+/)[0].slice(0, 10);
-      return <g key={record.id}><rect x={x} y={bottom - wholeHeight} width={barWidth} height={wholeHeight} fill="#8ee91d" rx="2" /><rect x={x} y={bottom - wholeHeight - halfHeight} width={barWidth} height={halfHeight} fill="#10b9ed" rx="2" /><text x={x + barWidth / 2} y={Math.max(10, bottom - (legs(record) / maxValue) * plotHeight - 6)} textAnchor="middle" className="bar-value">{legs(record)}</text><text x={x + barWidth / 2} y={height - 13} textAnchor="middle" className="bar-name">{label}</text></g>;
+      return <g key={record.id}><title>{record.driver_name}</title><rect x={x} y={bottom - wholeHeight} width={barWidth} height={wholeHeight} fill={checker ? "#bb86fc" : "#8ee91d"} rx="2" /><rect x={x} y={bottom - wholeHeight - halfHeight} width={barWidth} height={halfHeight} fill="#10b9ed" rx="2" /><text x={x + barWidth / 2} y={Math.max(10, bottom - (legs(record) / maxValue) * plotHeight - 6)} textAnchor="middle" className="bar-value">{legs(record)}</text><text x={x + barWidth / 2} y={height - 13} textAnchor="middle" className="bar-name">{label}</text></g>;
     })}
   </svg></div>;
 }
