@@ -21,6 +21,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import './styles.css';
 import './mobile-tweaks.css';
+import Conferentes from './Conferentes';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -523,6 +524,7 @@ function App() {
           <div className="period-switch" role="group" aria-label="Período"><button className={view === 'day' ? 'active' : ''} onClick={() => setView('day')}>DIA</button><button className={view === 'month' ? 'active' : ''} onClick={() => setView('month')}>MÊS</button></div>
           <p className="date-caption">{view === 'month' ? monthLabel : longDate ? longDate.charAt(0).toLocaleUpperCase('pt-BR') + longDate.slice(1) : 'Selecione a data do relatório'}</p>
           <div className="toolbar-actions">
+            <a className="btn checker-shortcut" href="#conferentes"><Trophy size={16} /> CONFERENTES</a>
             <button className="btn btn-outline" onClick={exportExcel} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar dados e resumo em Excel"><FileSpreadsheet size={16} /> EXPORTAR EXCEL</button>
             <button className="btn btn-outline" onClick={exportPdf} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar painel em PDF"><FileText size={16} /> EXPORTAR PDF</button>
             <button className="btn btn-outline" onClick={exportJpeg} disabled={!records.length || loading || Boolean(loadError) || historyIncomplete} title="Baixar painel como imagem JPEG"><FileImage size={16} /> EXPORTAR JPEG</button>
@@ -581,6 +583,8 @@ function App() {
             <div className="table-footnote"><span><i className="status-dot" /> DADOS DO {view === 'day' ? 'DIA' : 'MÊS'}</span><span>MÉDIA = TOTAL DE PERNAS ÷ HORAS ENTRE SAÍDA DA BASE E ENCERRAMENTO DA OPERAÇÃO</span></div>
           </section>
         </section>
+
+        <Conferentes key={selectedDate + view} date={selectedDate} view={view} />
 
         <footer className="brand-footer"><div className="footer-values"><span><Truck size={23} /> AGILIDADE</span><i /><span><strong className="shield-mark">✓</strong> SEGURANÇA</span><i /><span><strong className="gear-mark">✳</strong> EFICIÊNCIA</span><i /><span><strong className="people-mark">●●</strong> PARCERIAS</span><i /><span><strong className="chart-mark">↗</strong> RESULTADOS</span></div><div className="footer-signature"><span>JUNTOS, <b>MOVEMOS MAIS.</b></span><div className="footer-brand">ALENCAR <em>LOG</em></div></div></footer>
       </div>
